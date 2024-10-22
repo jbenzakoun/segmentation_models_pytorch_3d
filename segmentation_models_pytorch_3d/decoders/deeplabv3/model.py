@@ -56,6 +56,8 @@ class DeepLabV3(SegmentationModel):
         activation: Optional[str] = None,
         upsampling: int = 8,
         aux_params: Optional[dict] = None,
+        strides=((2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)),
+        output_2d = False
     ):
         super().__init__()
 
@@ -65,6 +67,8 @@ class DeepLabV3(SegmentationModel):
             depth=encoder_depth,
             weights=encoder_weights,
             output_stride=8,
+            strides=strides,
+            output_2d=output_2d
         )
 
         self.decoder = DeepLabV3Decoder(

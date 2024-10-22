@@ -425,13 +425,14 @@ class BlockDecoder(object):
                 options[key] = value
 
         # Check stride
-        assert (('s' in options and len(options['s']) == 1) or
-                (len(options['s']) == 2 and options['s'][0] == options['s'][1]))
+        assert (('s' in options and len(options['s']) == 1 or
+                (len(options['s']) == 2 and options['s'][0] == options['s'][1])) or
+                (len(options['s']) == 3))
 
         return BlockArgs(
             num_repeat=int(options['r']),
             kernel_size=int(options['k']),
-            stride=[int(options['s'][0])],
+            stride=tuple([int(options['s'][i]) for i in range(len(options['s']))]),
             expand_ratio=int(options['e']),
             input_filters=int(options['i']),
             output_filters=int(options['o']),
@@ -540,13 +541,13 @@ def efficientnet(width_coefficient=None, depth_coefficient=None, image_size=None
     # Blocks args for the whole model(efficientnet-b0 by default)
     # It will be modified in the construction of EfficientNet Class according to model
     blocks_args = [
-        'r1_k3_s11_e1_i32_o16_se0.25',
-        'r2_k3_s22_e6_i16_o24_se0.25',
-        'r2_k5_s22_e6_i24_o40_se0.25',
-        'r3_k3_s22_e6_i40_o80_se0.25',
-        'r3_k5_s11_e6_i80_o112_se0.25',
-        'r4_k5_s22_e6_i112_o192_se0.25',
-        'r1_k3_s11_e6_i192_o320_se0.25',
+        'r1_k3_s111_e1_i32_o16_se0.25',
+        'r2_k3_s122_e6_i16_o24_se0.25',
+        'r2_k5_s122_e6_i24_o40_se0.25',
+        'r3_k3_s122_e6_i40_o80_se0.25',
+        'r3_k5_s111_e6_i80_o112_se0.25',
+        'r4_k5_s122_e6_i112_o192_se0.25',
+        'r1_k3_s111_e6_i192_o320_se0.25',
     ]
     blocks_args = BlockDecoder.decode(blocks_args)
 
@@ -1040,11 +1041,11 @@ class EfficientNet(nn.Module):
         if in_channels != 3:
             Conv3d = get_same_padding_conv3d(image_size=self._global_params.image_size)
             out_channels = round_filters(32, self._global_params)
-            self._conv_stem = Conv3d(in_channels, out_channels, kernel_size=3, stride=2, bias=False)
+            self._conv_stem = Conv3d(in_channels, out_channels, kernel_size=3, stride=(1,2,2), bias=False)
 
 
 class EfficientNetEncoder(EfficientNet, EncoderMixin):
-    def __init__(self, stage_idxs, out_channels, model_name, depth=5, strides=((2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2))):
+    def __init__(self, stage_idxs, out_channels, model_name, depth=5, strides=((2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)),output_2d=False):
 
         blocks_args, global_params = get_model_params(model_name, override_params=None)
         super().__init__(blocks_args, global_params, strides)
@@ -1054,6 +1055,7 @@ class EfficientNetEncoder(EfficientNet, EncoderMixin):
         self._depth = depth
         self._in_channels = 3
         self.strides = strides
+        self.output_2d = output_2d
 
         del self._fc
 

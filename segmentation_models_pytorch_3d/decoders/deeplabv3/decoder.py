@@ -57,7 +57,7 @@ class DeepLabV3PlusDecoder(nn.Module):
         encoder_channels,
         out_channels=256,
         atrous_rates=(12, 24, 36),
-        output_stride=16,
+        output_stride=16
     ):
         super().__init__()
         if output_stride not in {8, 16}:

@@ -46,8 +46,7 @@ class SegmentationModel(torch.nn.Module):
         self.check_input_shape(x)
 
         features = self.encoder(x)
-        if self.decoder.output_2d:
-            features = [i[:,:,int(i.shape[2]/2)] for i in features] # 3D to 2D
+        features = [i[:,:,int(i.shape[2]/2)] for i in features] # 3D to 2D
         decoder_output = self.decoder(*features)
 
         masks = self.segmentation_head(decoder_output)

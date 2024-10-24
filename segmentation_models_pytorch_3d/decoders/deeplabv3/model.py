@@ -56,8 +56,7 @@ class DeepLabV3(SegmentationModel):
         activation: Optional[str] = None,
         upsampling: int = 8,
         aux_params: Optional[dict] = None,
-        strides=((2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)),
-        output_2d = False
+        strides=((2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2))
     ):
         super().__init__()
 
@@ -67,13 +66,12 @@ class DeepLabV3(SegmentationModel):
             depth=encoder_depth,
             weights=encoder_weights,
             output_stride=8,
-            strides=strides,
-            output_2d=output_2d
+            strides=strides
         )
 
         self.decoder = DeepLabV3Decoder(
             in_channels=self.encoder.out_channels[-1],
-            out_channels=decoder_channels,
+            out_channels=decoder_channels
         )
 
         self.segmentation_head = SegmentationHead(
@@ -141,8 +139,7 @@ class DeepLabV3Plus(SegmentationModel):
         activation: Optional[str] = None,
         upsampling: int = 4,
         aux_params: Optional[dict] = None,
-        strides=((2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)),
-        output_2d = False
+        strides=((2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2))
     ):
         super().__init__()
 
@@ -155,15 +152,14 @@ class DeepLabV3Plus(SegmentationModel):
             depth=encoder_depth,
             weights=encoder_weights,
             output_stride=encoder_output_stride,
-            strides=strides,
-            output_2d=output_2d
+            strides=strides
         )
 
         self.decoder = DeepLabV3PlusDecoder(
             encoder_channels=self.encoder.out_channels,
             out_channels=decoder_channels,
             atrous_rates=decoder_atrous_rates,
-            output_stride=encoder_output_stride,
+            output_stride=encoder_output_stride
         )
 
         self.segmentation_head = SegmentationHead(

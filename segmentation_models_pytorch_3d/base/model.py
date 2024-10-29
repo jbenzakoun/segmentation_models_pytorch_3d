@@ -44,9 +44,11 @@ class SegmentationModel(torch.nn.Module):
         """Sequentially pass `x` trough model`s encoder, decoder and heads"""
 
         self.check_input_shape(x)
-
         features = self.encoder(x)
-        features = [i[:,:,int(i.shape[2]/2)] for i in features] # 3D to 2D
+        #features = [i[:,:,int(i.shape[2]/2)] for i in features] # 3D to 2D
+        features = [i[:,:,j] for i,j in zip(features,[3, 3, 2, 2, 1, 1])] # 3D to 2D
+        #print([i.size() for i in features])
+        #features = [i[:,:,int((i.size()[2])/2)] for i in features] # 3D to 2D
         decoder_output = self.decoder(*features)
 
         masks = self.segmentation_head(decoder_output)

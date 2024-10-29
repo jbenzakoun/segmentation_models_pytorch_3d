@@ -1079,8 +1079,12 @@ class EfficientNetEncoder(EfficientNet, EncoderMixin):
         for i in range(self._depth + 1):
 
             # Identity and Sequential stages
-            if i < 2:
-                x = stages[i](x)
+            if i == 0:
+                x = x
+            elif i == 1:
+                x = self._conv_stem(x)
+                x = self._bn0(x)
+                x = self._swish(x)
 
             # Block stages need drop_connect rate
             else:

@@ -49,3 +49,12 @@ def replace_strides_with_dilation(module, dilation_rate):
             # Kostyl for EfficientNet
             if hasattr(mod, "static_padding"):
                 mod.static_padding = nn.Identity()
+        if hasattr(mod, 'conv3D'):
+            mod.conv3D.stride = (1, 1, 1)
+            mod.conv3D.dilation = (dilation_rate, dilation_rate, dilation_rate)
+            kh, kw, kd = mod.conv3D.kernel_size
+            mod.conv3D.padding = ((kh // 2) * dilation_rate, (kh // 2) * dilation_rate, (kd // 2) * dilation_rate)
+
+            # Kostyl for EfficientNet
+            if hasattr(mod, "static_padding"):
+                mod.static_padding = nn.Identity()

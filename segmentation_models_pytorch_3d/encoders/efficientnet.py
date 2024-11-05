@@ -108,8 +108,16 @@ class SwishImplementation(torch.autograd.Function):
 
 
 class MemoryEfficientSwish(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dequant = torch.ao.quantization.DeQuantStub()
+        self.quant = torch.ao.quantization.QuantStub()
     def forward(self, x):
-        return SwishImplementation.apply(x)
+        x = self.dequant(x)
+        x = x * torch.sigmoid(x)
+        x = self.quant(x)
+        return x
+        #return SwishImplementation.apply(x)
 
 
 def round_filters(filters, global_params):
@@ -279,26 +287,28 @@ class Conv3dDynamicSamePadding(nn.Conv3d):
         return F.conv3d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 
-class Conv3dStaticSamePadding(nn.Conv3d):
+class Conv3dStaticSamePadding(nn.Module):
     """2D Convolutions like TensorFlow's 'SAME' mode, with the given input image size.
        The padding mudule is calculated in construction function, then used in forward.
     """
 
     # With the same calculation as Conv2dDynamicSamePadding
 
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, image_size=None, **kwargs):
-        super().__init__(in_channels, out_channels, kernel_size, stride, **kwargs)
-        self.stride = self.stride if len(self.stride) == 3 else [self.stride[0]] * 3
+    def __init__(self, in_channels, out_channels, kernel_size, image_size=None, stride=1, **kwargs):
+        if isinstance(stride, int): stride = [stride] * 3
+        else: stride = stride if len(stride) == 3 else [stride[0]] * 3
+        super().__init__()#in_channels, out_channels, kernel_size, stride, **kwargs)
+        self.conv3D = nn.Conv3d(in_channels, out_channels, kernel_size, stride, **kwargs)
 
         # Calculate padding based on image size and save it
         assert image_size is not None
         ih, iw, id = (image_size, image_size, image_size) if isinstance(image_size, int) else image_size
-        kh, kw, kd = self.weight.size()[-3:]
-        sh, sw, sd = self.stride
+        kh, kw, kd = self.conv3D.weight.size()[-3:]
+        sh, sw, sd = stride
         oh, ow, od = math.ceil(ih / sh), math.ceil(iw / sw), math.ceil(id / sd)
-        pad_h = max((oh - 1) * self.stride[0] + (kh - 1) * self.dilation[0] + 1 - ih, 0)
-        pad_w = max((ow - 1) * self.stride[1] + (kw - 1) * self.dilation[1] + 1 - iw, 0)
-        pad_d = max((od - 1) * self.stride[2] + (kd - 1) * self.dilation[2] + 1 - id, 0)
+        pad_h = max((oh - 1) * stride[0] + (kh - 1) * self.conv3D.dilation[0] + 1 - ih, 0)
+        pad_w = max((ow - 1) * stride[1] + (kw - 1) * self.conv3D.dilation[1] + 1 - iw, 0)
+        pad_d = max((od - 1) * stride[2] + (kd - 1) * self.conv3D.dilation[2] + 1 - id, 0)
         if pad_h > 0 or pad_w > 0 or pad_d > 0:
             self.static_padding = nn.ZeroPad2d((
                 pad_w // 2, pad_w - pad_w // 2,
@@ -309,8 +319,12 @@ class Conv3dStaticSamePadding(nn.Conv3d):
             self.static_padding = nn.Identity()
 
     def forward(self, x):
+        #x = self.static_padding(x)
+        if isinstance(self.static_padding, nn.ZeroPad2d):
+            x = x.contiguous()
         x = self.static_padding(x)
-        x = F.conv3d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        x = self.conv3D(x)
+        #x = F.conv3d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return x
 
 
@@ -711,6 +725,16 @@ class MBConvBlock(nn.Module):
         self._project_conv = Conv3d(in_channels=oup, out_channels=final_oup, kernel_size=1, bias=False)
         self._bn2 = nn.BatchNorm3d(num_features=final_oup, momentum=self._bn_mom, eps=self._bn_eps)
         self._swish = MemoryEfficientSwish()
+        
+        self.dequantX = torch.ao.quantization.DeQuantStub()
+        self.quantX = torch.ao.quantization.QuantStub()
+        self.dequantSK = torch.ao.quantization.DeQuantStub()
+        self.dequantS = torch.ao.quantization.DeQuantStub()
+        #self.quantS = torch.ao.quantization.QuantStub()
+        self.dequantSE = torch.ao.quantization.DeQuantStub()
+        self.quantSE = torch.ao.quantization.QuantStub()
+        self.dequantI = torch.ao.quantization.DeQuantStub()
+        self.quantI = torch.ao.quantization.QuantStub()
 
     def forward(self, inputs, drop_connect_rate=None):
         """MBConvBlock's forward function.
@@ -740,7 +764,12 @@ class MBConvBlock(nn.Module):
             x_squeezed = self._se_reduce(x_squeezed)
             x_squeezed = self._swish(x_squeezed)
             x_squeezed = self._se_expand(x_squeezed)
-            x = torch.sigmoid(x_squeezed) * x
+            x_squeezed = self.dequantS(x_squeezed)
+            x = self.dequantSE(x)
+            x_squeezed = torch.sigmoid(x_squeezed)
+            x = x_squeezed * x
+            x = self.quantSE(x)
+            #x_squeezed = self.quantS(x_squeezed)
 
         # Pointwise Convolution
         x = self._project_conv(x)
@@ -752,7 +781,10 @@ class MBConvBlock(nn.Module):
             # The combination of skip connection and drop connect brings about stochastic depth.
             if drop_connect_rate:
                 x = drop_connect(x, p=drop_connect_rate, training=self.training)
+            x = self.dequantX(x)
+            inputs = self.dequantSK(inputs)
             x = x + inputs  # skip connection
+            x = self.quantX(x)
         return x
 
     def set_swish(self, memory_efficient=True):
@@ -826,7 +858,7 @@ class EfficientNet(nn.Module):
             for _ in range(block_args.num_repeat - 1):
                 self._blocks.append(MBConvBlock(block_args, self._global_params, image_size=image_size))
                 # image_size = calculate_output_image_size(image_size, block_args.stride)  # stride = 1
-
+        
         # Head
         in_channels = block_args.output_filters  # output of final block
         out_channels = round_filters(1280, self._global_params)
@@ -1069,7 +1101,7 @@ class EfficientNetEncoder(EfficientNet, EncoderMixin):
             self._blocks[self._stage_idxs[2] :],
         ]
 
-    def forward(self, x):
+    def forward(self, x):        
         stages = self.get_stages()
 
         block_number = 0.0
@@ -1102,6 +1134,19 @@ class EfficientNetEncoder(EfficientNet, EncoderMixin):
         state_dict.pop("_fc.bias", None)
         state_dict.pop("_fc.weight", None)
         state_dict = convert_2d_weights_to_3d(state_dict)
+        if '_conv_stem.weight' in state_dict.keys():
+            state_dict['_conv_stem.conv3D.weight'] = state_dict.pop('_conv_stem.weight')
+        for i in range(16):
+            state_dict['_blocks.'+str(i)+'._depthwise_conv.conv3D.weight'] = state_dict.pop('_blocks.'+str(i)+'._depthwise_conv.weight')
+            state_dict['_blocks.'+str(i)+'._se_reduce.conv3D.weight'] = state_dict.pop('_blocks.'+str(i)+'._se_reduce.weight')
+            state_dict['_blocks.'+str(i)+'._se_reduce.conv3D.bias'] = state_dict.pop('_blocks.'+str(i)+'._se_reduce.bias')
+            state_dict['_blocks.'+str(i)+'._se_expand.conv3D.weight'] = state_dict.pop('_blocks.'+str(i)+'._se_expand.weight')
+            state_dict['_blocks.'+str(i)+'._se_expand.conv3D.bias'] = state_dict.pop('_blocks.'+str(i)+'._se_expand.bias')
+            if '_blocks.'+str(i)+'._expand_conv.weight' in state_dict.keys():
+                state_dict['_blocks.'+str(i)+'._expand_conv.conv3D.weight'] = state_dict.pop('_blocks.'+str(i)+'._expand_conv.weight')
+            state_dict['_blocks.'+str(i)+'._project_conv.conv3D.weight'] = state_dict.pop('_blocks.'+str(i)+'._project_conv.weight')
+        if '_conv_head.weight' in state_dict.keys():
+            state_dict['_conv_head.conv3D.weight'] = state_dict.pop('_conv_head.weight')
         super().load_state_dict(state_dict, **kwargs)
 
 
